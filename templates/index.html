@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NPUView — System Monitor</title>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg-primary: #0a0e1a;
+      --bg-secondary: #111827;
+      --bg-card: #1a2235;
+      --bg-card-hover: #1f2d45;
+      --accent-blue: #3b82f6;
+      --accent-cyan: #06b6d4;
+      --accent-green: #10b981;
+      --accent-yellow: #f59e0b;
+      --accent-red: #ef4444;
+      --accent-purple: #8b5cf6;
+      --accent-orange: #f97316;
+      --text-primary: #f1f5f9;
+      --text-secondary: #94a3b8;
+      --text-muted: #475569;
+      --border: #1e3a5f;
+      --glow-blue: 0 0 20px rgba(59,130,246,0.3);
+      --glow-green: 0 0 20px rgba(16,185,129,0.3);
+      --glow-red: 0 0 20px rgba(239,68,68,0.3);
+      --glow-purple: 0 0 20px rgba(139,92,246,0.3);
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg-secondary); }
+    ::-webkit-scrollbar-thumb { background: var(--accent-blue); border-radius: 3px; }
+
+    /* ── Background particles ── */
+    #particles-canvas {
+      position: fixed; top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none; z-index: 0; opacity: 0.4;
+    }
+
+    /* ── Layout ── */
+    .app-wrapper { position: relative; z-index: 1; }
+
+    /* ── Header ── */
+    header {
+      background: linear-gradient(135deg, rgba(17,24,39,0.95) 0%, rgba(26,34,53,0.95) 100%);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 2rem;
+      height: 64px;
+      display: flex; align-items: center; justify-content: space-between;
+      position: sticky; top: 0; z-index: 100;
+      box-shadow: 0 4px 30px rgba(0,0,0,0.5);
+    }
+    .logo {
+      display: flex; align-items: center; gap: 12px;
+    }
+    .logo-icon {
+      width: 36px; height: 36px;
+      background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; font-weight: 900;
+      box-shadow: var(--glow-blue);
+      animation: pulse-logo 3s infinite;
+    }
+    @keyframes pulse-logo {
+      0%,100%{ box-shadow: 0 0 15px rgba(59,130,246,0.4); }
+      50%    { box-shadow: 0 0 30px rgba(59,130,246,0.8); }
+    }
+    .logo-text { font-size: 1.4rem; font-weight: 700; letter-spacing: 2px; }
+    .logo-text span { color: var(--accent-cyan); }
+
+    .header-right { display: flex; align-items: center; gap: 1.5rem; }
+    .status-badge {
+      display: flex; align-items: center; gap: 6px;
+      background: rgba(16,185,129,0.1);
+      border: 1px solid rgba(16,185,129,0.3);
+      border-radius: 20px;
+      padding: 4px 12px;
+      font-size: 0.75rem; color: var(--accent-green);
+      font-weight: 600; letter-spacing: 1px;
+    }
+    .status-dot {
+      width: 7px; height: 7px;
+      background: var(--accent-green); border-radius: 50%;
+      animation: blink 1.5s infinite;
+    }
+    @keyframes blink {
+      0%,100%{ opacity:1; } 50%{ opacity:0.2; }
+    }
+    .clock { font-family: monospace; font-size: 1rem; color: var(--accent-cyan); letter-spacing: 2px; }
+
+    /* ── System info bar ── */
+    .sysbar {
+      background: rgba(17,24,39,0.7);
+      border-bottom: 1px solid var(--border);
+      padding: 8px 2rem;
+      display: flex; gap: 2rem; flex-wrap: wrap;
+      font-size: 0.75rem; color: var(--text-secondary);
+    }
+    .sysbar-item { display: flex; align-items: center; gap: 6px; }
+    .sysbar-label { color: var(--text-muted); }
+    .sysbar-value { color: var(--text-primary); font-weight: 500; }
+
+    /* ── Main Grid ── */
+    main { padding: 1.5rem 2rem; }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem; margin-bottom: 1.5rem;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem; margin-bottom: 1.5rem;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem; margin-bottom: 1.5rem;
+    }
+    @media(max-width:1200px){ .grid-4{ grid-template-columns: repeat(2,1fr); } }
+    @media(max-width:768px){
+      .grid-4,.grid-2,.grid-3{ grid-template-columns:1fr; }
+      header { padding:0 1rem; }
+      main   { padding:1rem; }
+    }
+
+    /* ── Card ── */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.25rem;
+      transition: transform .2s, box-shadow .2s, border-color .2s;
+      position: relative; overflow: hidden;
+    }
+    .card::before {
+      content:'';
+      position: absolute; top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--card-accent, var(--accent-blue)), transparent);
+    }
+    .card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+      border-color: var(--card-accent, var(--accent-blue));
+    }
+
+    /* ── Stat Card ── */
+    .stat-card { --card-accent: var(--accent-blue); }
+    .stat-card.green { --card-accent: var(--accent-green); }
+    .stat-card.purple { --card-accent: var(--accent-purple); }
+    .stat-card.yellow { --card-accent: var(--accent-yellow); }
+
+    .stat-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 1rem;
+    }
+    .stat-title {
+      font-size: 0.7rem; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 1.5px;
+      color: var(--text-secondary);
+    }
+    .stat-icon {
+      width: 38px; height: 38px;
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.1rem;
+    }
+    .icon-blue   { background: rgba(59,130,246,0.15);  color: var(--accent-blue); }
+    .icon-green  { background: rgba(16,185,129,0.15);  color: var(--accent-green); }
+    .icon-purple { background: rgba(139,92,246,0.15);  color: var(--accent-purple); }
+    .icon-yellow { background: rgba(245,158,11,0.15);  color: var(--accent-yellow); }
+    .icon-cyan   { background: rgba(6,182,212,0.15);   color: var(--accent-cyan); }
+    .icon-orange { background: rgba(249,115,22,0.15);  color: var(--accent-orange); }
+    .icon-red    { background: rgba(239,68,68,0.15);   color: var(--accent-red); }
+
+    .stat-value {
+      font-size: 2.2rem; font-weight: 800;
+      line-height: 1; margin-bottom: 4px;
+      font-variant-numeric: tabular-nums;
+    }
+    .stat-unit { font-size: 0.9rem; color: var(--text-secondary); font-weight: 400; }
+    .stat-sub { font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; }
+
+    /* ── Gauge ── */
+    .gauge-wrap { position: relative; width: 100%; margin: 0.5rem 0; }
+    .gauge-bar-bg {
+      height: 8px; border-radius: 8px;
+      background: rgba(255,255,255,0.07);
+      overflow: hidden;
+    }
+    .gauge-bar {
+      height: 100%; border-radius: 8px;
+      transition: width .6s cubic-bezier(.4,0,.2,1);
+      background: linear-gradient(90deg, var(--bar-from, #3b82f6), var(--bar-to, #06b6d4));
+      box-shadow: 0 0 8px var(--bar-glow, rgba(59,130,246,.5));
+    }
+
+    /* ── Section heading ── */
+    .section-title {
+      font-size: 0.75rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 2px;
+      color: var(--text-secondary);
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 1rem;
+    }
+    .section-title::after {
+      content: ''; flex: 1; height: 1px;
+      background: linear-gradient(90deg, var(--border), transparent);
+    }
+
+    /* ── Core grid ── */
+    .cores-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+      gap: 10px;
+    }
+    .core-cell {
+      aspect-ratio: 1;
+      border-radius: 10px;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      font-size: 0.65rem; font-weight: 700;
+      transition: background .4s, box-shadow .4s;
+      cursor: default;
+    }
+    .core-pct { font-size: 0.9rem; font-weight: 800; }
+
+    /* ── Chart card ── */
+    .chart-card { --card-accent: var(--accent-cyan); }
+    .chart-wrap { position: relative; height: 180px; }
+
+    /* ── GPU Card ── */
+    .gpu-card { --card-accent: var(--accent-purple); }
+    .gpu-name {
+      font-size: 1rem; font-weight: 700;
+      color: var(--text-primary); margin-bottom: 1rem;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .gpu-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+    .gpu-stat-item { display: flex; flex-direction: column; gap: 4px; }
+    .gpu-stat-label { font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
+    .gpu-stat-val { font-size: 1.3rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+
+    /* ── Disk ── */
+    .disk-list { display: flex; flex-direction: column; gap: 0.75rem; }
+    .disk-row { display: flex; flex-direction: column; gap: 4px; }
+    .disk-header { display: flex; justify-content: space-between; align-items: center; }
+    .disk-path { font-size: 0.78rem; color: var(--text-secondary); font-weight: 600; }
+    .disk-usage { font-size: 0.72rem; color: var(--text-muted); }
+
+    /* ── Network ── */
+    .net-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .net-item { text-align: center; }
+    .net-val { font-size: 1.1rem; font-weight: 700; font-variant-numeric: tabular-nums; margin-bottom: 2px; }
+    .net-label { font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
+
+    /* ── Temp display ── */
+    .temp-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 8px; border-radius: 6px;
+      font-size: 0.75rem; font-weight: 700;
+    }
+    .temp-cool   { background: rgba(16,185,129,.15); color: var(--accent-green); }
+    .temp-warm   { background: rgba(245,158,11,.15);  color: var(--accent-yellow); }
+    .temp-hot    { background: rgba(239,68,68,.15);   color: var(--accent-red); }
+
+    /* ── Footer ── */
+    footer {
+      text-align: center; padding: 1.5rem;
+      font-size: 0.72rem; color: var(--text-muted);
+      border-top: 1px solid var(--border);
+      margin-top: 1rem;
+    }
+
+    /* ── Animations ── */
+    .fade-in { animation: fadeIn .5s ease forwards; }
+    @keyframes fadeIn { from{ opacity:0; transform:translateY(10px); } to{ opacity:1; transform:translateY(0); } }
+
+    .no-gpu-msg {
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; padding: 2rem; gap: 0.5rem;
+      color: var(--text-muted); font-size: 0.85rem;
+    }
+    .no-gpu-msg .icon { font-size: 2.5rem; }
+  </style>
+</head>
+<body>
+<canvas id="particles-canvas"></canvas>
+
+<div class="app-wrapper">
+  <!-- Header -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon">N</div>
+      <div class="logo-text">NPU<span>View</span></div>
+    </div>
+    <div class="header-right">
+      <div class="status-badge">
+        <div class="status-dot"></div>
+        LIVE
+      </div>
+      <div class="clock" id="clock">--:--:--</div>
+    </div>
+  </header>
+
+  <!-- System info bar -->
+  <div class="sysbar">
+    <div class="sysbar-item">
+      <span class="sysbar-label">OS</span>
+      <span class="sysbar-value">{{ system_info.os }}</span>
+    </div>
+    <div class="sysbar-item">
+      <span class="sysbar-label">HOST</span>
+      <span class="sysbar-value">{{ system_info.hostname }}</span>
+    </div>
+    <div class="sysbar-item">
+      <span class="sysbar-label">CPU</span>
+      <span class="sysbar-value">{{ system_info.processor[:50] }}</span>
+    </div>
+    <div class="sysbar-item">
+      <span class="sysbar-label">ARCH</span>
+      <span class="sysbar-value">{{ system_info.architecture }}</span>
+    </div>
+    <div class="sysbar-item">
+      <span class="sysbar-label">BOOT</span>
+      <span class="sysbar-value">{{ system_info.boot_time }}</span>
+    </div>
+    <div class="sysbar-item">
+      <span class="sysbar-label">UPTIME</span>
+      <span class="sysbar-value" id="uptime-val">--:--:--</span>
+    </div>
+  </div>
+
+  <main>
+
+    <!-- ── Row 1: Quick Stats ── -->
+    <div class="grid-3 fade-in">
+      <!-- CPU Usage -->
+      <div class="card stat-card">
+        <div class="stat-header">
+          <div class="stat-title">CPU 使用率</div>
+          <div class="stat-icon icon-blue">⚡</div>
+        </div>
+        <div class="stat-value" id="cpu-pct">--<span class="stat-unit">%</span></div>
+        <div class="stat-sub" id="cpu-freq">頻率: -- MHz</div>
+        <div class="gauge-wrap" style="margin-top:.75rem">
+          <div class="gauge-bar-bg">
+            <div class="gauge-bar" id="cpu-bar"
+                 style="width:0%;--bar-from:#3b82f6;--bar-to:#06b6d4;--bar-glow:rgba(59,130,246,.5)"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Memory -->
+      <div class="card stat-card green">
+        <div class="stat-header">
+          <div class="stat-title">記憶體使用率</div>
+          <div class="stat-icon icon-green">🧠</div>
+        </div>
+        <div class="stat-value" id="mem-pct">--<span class="stat-unit">%</span></div>
+        <div class="stat-sub" id="mem-detail">-- / -- GB</div>
+        <div class="gauge-wrap" style="margin-top:.75rem">
+          <div class="gauge-bar-bg">
+            <div class="gauge-bar" id="mem-bar"
+                 style="width:0%;--bar-from:#10b981;--bar-to:#34d399;--bar-glow:rgba(16,185,129,.5)"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- GPU Load -->
+      <div class="card stat-card purple" id="gpu-stat-card">
+        <div class="stat-header">
+          <div class="stat-title">GPU 使用率</div>
+          <div class="stat-icon icon-purple">🎮</div>
+        </div>
+        <div class="stat-value" id="gpu-pct">--<span class="stat-unit">%</span></div>
+        <div class="stat-sub" id="gpu-mem-sub">VRAM: -- / -- MB</div>
+        <div class="gauge-wrap" style="margin-top:.75rem">
+          <div class="gauge-bar-bg">
+            <div class="gauge-bar" id="gpu-bar"
+                 style="width:0%;--bar-from:#8b5cf6;--bar-to:#a78bfa;--bar-glow:rgba(139,92,246,.5)"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ── Row 2: Charts ── -->
+    <div class="grid-2 fade-in">
+      <!-- CPU History Chart -->
+      <div class="card chart-card">
+        <div class="section-title">📊 CPU 歷史使用率</div>
+        <div class="chart-wrap">
+          <canvas id="cpuChart"></canvas>
+        </div>
+      </div>
+
+      <!-- GPU History Chart -->
+      <div class="card chart-card" style="--card-accent:var(--accent-purple)">
+        <div class="section-title">📊 GPU 歷史使用率</div>
+        <div class="chart-wrap">
+          <canvas id="gpuChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Row 3: CPU Cores + GPU Detail ── -->
+    <!-- ── Row 3: CPU Cores (full width) ── -->
+    <div class="fade-in" style="margin-bottom:1.5rem">
+      <div class="card">
+        <div class="section-title">🔲 CPU 核心監控</div>
+        <div class="cores-grid" id="cores-grid" style="margin-top:.75rem"></div>
+        <div style="margin-top:1rem; display:flex; gap:1.5rem; font-size:.75rem; color:var(--text-muted)">
+          <span>▪ 低 (0–40%)</span>
+          <span style="color:#10b981">▪ 中 (40–70%)</span>
+          <span style="color:#f59e0b">▪ 高 (70–90%)</span>
+          <span style="color:#ef4444">▪ 滿載 (90%+)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Row 4: GPU Detail (full width) ── -->
+    <div class="fade-in" style="margin-bottom:1.5rem">
+      <div class="card gpu-card" id="gpu-detail-card">
+        <div class="section-title">🎮 GPU 詳細資訊</div>
+        <div id="gpu-detail-content">
+          {% if gpu_available %}
+          <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem">
+            <div class="gpu-name" id="gpu-name" style="margin-bottom:0;flex:1">偵測中...</div>
+            <span id="gpu-api-badge" style="font-size:.62rem;padding:2px 8px;border-radius:12px;background:rgba(139,92,246,.2);color:var(--accent-purple);font-weight:700;white-space:nowrap">--</span>
+            <span id="gpu-vendor-badge" style="font-size:.62rem;padding:2px 8px;border-radius:12px;background:rgba(6,182,212,.15);color:var(--accent-cyan);font-weight:700;white-space:nowrap">--</span>
+          </div>
+          <div class="gpu-stats" style="grid-template-columns:1fr 1fr 1fr">
+            <div class="gpu-stat-item">
+              <div class="gpu-stat-label">核心使用率</div>
+              <div class="gpu-stat-val" id="gd-load" style="color:var(--accent-purple)">--%</div>
+            </div>
+            <div class="gpu-stat-item">
+              <div class="gpu-stat-label">溫度</div>
+              <div class="gpu-stat-val" id="gd-temp" style="color:var(--accent-yellow)">--°C</div>
+            </div>
+            <div class="gpu-stat-item">
+              <div class="gpu-stat-label">風扇</div>
+              <div class="gpu-stat-val" id="gd-fan" style="color:var(--accent-cyan)">--%</div>
+            </div>
+            <div class="gpu-stat-item">
+              <div class="gpu-stat-label">VRAM 已用</div>
+              <div class="gpu-stat-val" id="gd-mem-used" style="color:var(--accent-cyan)">-- MB</div>
+            </div>
+            <div class="gpu-stat-item">
+              <div class="gpu-stat-label">VRAM 總量</div>
+              <div class="gpu-stat-val" id="gd-mem-total" style="color:var(--text-secondary)">-- MB</div>
+            </div>
+            <div class="gpu-stat-item">
+              <div class="gpu-stat-label">功耗</div>
+              <div class="gpu-stat-val" id="gd-power" style="color:var(--accent-orange)">-- W</div>
+            </div>
+          </div>
+          <div style="margin-top:.75rem;display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
+            <div style="background:rgba(139,92,246,.08);border:1px solid rgba(139,92,246,.2);border-radius:8px;padding:.4rem .6rem">
+              <div style="font-size:.62rem;color:var(--text-muted);margin-bottom:2px">核心時脈</div>
+              <div style="font-size:.9rem;font-weight:800;color:var(--accent-purple)" id="gd-core-clk">-- MHz</div>
+            </div>
+            <div style="background:rgba(6,182,212,.08);border:1px solid rgba(6,182,212,.2);border-radius:8px;padding:.4rem .6rem">
+              <div style="font-size:.62rem;color:var(--text-muted);margin-bottom:2px">記憶體時脈</div>
+              <div style="font-size:.9rem;font-weight:800;color:var(--accent-cyan)" id="gd-mem-clk">-- MHz</div>
+            </div>
+          </div>
+          <div style="margin-top:.75rem">
+            <div class="section-title" style="font-size:.65rem">VRAM 使用</div>
+            <div class="gauge-bar-bg">
+              <div class="gauge-bar" id="vram-bar"
+                   style="width:0%;--bar-from:#8b5cf6;--bar-to:#06b6d4;--bar-glow:rgba(139,92,246,.5)"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:.7rem;color:var(--text-muted);margin-top:4px">
+              <span id="vram-used-text">-- MB</span>
+              <span id="vram-total-text">-- MB</span>
+            </div>
+          </div>
+          <div style="margin-top:0.6rem;font-size:0.72rem;color:var(--text-muted)" id="gpu-driver">Driver: --</div>
+          {% else %}
+          <div class="no-gpu-msg">
+            <div class="icon">🔌</div>
+            <div>未偵測到 GPU</div>
+            <div style="font-size:.68rem">安裝 pynvml (NVIDIA) 或確認 AMD 驅動已安裝</div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    </div>
+
+    <!-- ── Row 5: Memory + Disk + Network ── -->
+    <div class="grid-3 fade-in">
+      <!-- Memory Detail -->
+      <div class="card" style="--card-accent:var(--accent-green)">
+        <div class="section-title">🧠 記憶體詳情</div>
+        <div style="display:flex;flex-direction:column;gap:.75rem">
+          <div>
+            <div style="display:flex;justify-content:space-between;font-size:.78rem;margin-bottom:4px">
+              <span style="color:var(--text-secondary)">實體記憶體</span>
+              <span id="ram-pct-label" style="color:var(--accent-green);font-weight:700">--%</span>
+            </div>
+            <div class="gauge-bar-bg">
+              <div class="gauge-bar" id="ram-bar2"
+                   style="width:0%;--bar-from:#10b981;--bar-to:#34d399;--bar-glow:rgba(16,185,129,.5)"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:.7rem;color:var(--text-muted);margin-top:4px">
+              <span id="ram-used">-- GB</span><span id="ram-total">-- GB</span>
+            </div>
+          </div>
+          <div>
+            <div style="display:flex;justify-content:space-between;font-size:.78rem;margin-bottom:4px">
+              <span style="color:var(--text-secondary)">虛擬記憶體 (Swap)</span>
+              <span id="swap-pct-label" style="color:var(--accent-cyan);font-weight:700">--%</span>
+            </div>
+            <div class="gauge-bar-bg">
+              <div class="gauge-bar" id="swap-bar"
+                   style="width:0%;--bar-from:#06b6d4;--bar-to:#67e8f9;--bar-glow:rgba(6,182,212,.5)"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:.7rem;color:var(--text-muted);margin-top:4px">
+              <span id="swap-used">-- GB</span><span id="swap-total">-- GB</span>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-top:.25rem">
+            <div style="background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2);border-radius:8px;padding:.5rem;text-align:center">
+              <div style="font-size:1rem;font-weight:800;color:var(--accent-green)" id="ram-avail">--</div>
+              <div style="font-size:.65rem;color:var(--text-muted)">可用 GB</div>
+            </div>
+            <div style="background:rgba(6,182,212,.08);border:1px solid rgba(6,182,212,.2);border-radius:8px;padding:.5rem;text-align:center">
+              <div style="font-size:1rem;font-weight:800;color:var(--accent-cyan)" id="ram-total-b">--</div>
+              <div style="font-size:.65rem;color:var(--text-muted)">總量 GB</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Disk -->
+      <div class="card" style="--card-accent:var(--accent-orange)">
+        <div class="section-title">💾 磁碟使用</div>
+        <div class="disk-list" id="disk-list"></div>
+      </div>
+
+      <!-- Network -->
+      <div class="card" style="--card-accent:var(--accent-cyan)">
+        <div class="section-title">🌐 網路流量</div>
+        <div class="net-grid">
+          <div class="net-item">
+            <div class="net-val" id="net-sent" style="color:var(--accent-blue)">-- MB</div>
+            <div class="net-label">▲ 發送</div>
+          </div>
+          <div class="net-item">
+            <div class="net-val" id="net-recv" style="color:var(--accent-cyan)">-- MB</div>
+            <div class="net-label">▼ 接收</div>
+          </div>
+          <div class="net-item">
+            <div class="net-val" id="net-pkt-s" style="color:var(--accent-green)">--</div>
+            <div class="net-label">封包 發送</div>
+          </div>
+          <div class="net-item">
+            <div class="net-val" id="net-pkt-r" style="color:var(--accent-yellow)">--</div>
+            <div class="net-label">封包 接收</div>
+          </div>
+        </div>
+        <div style="margin-top:1.5rem">
+          <div class="section-title" style="font-size:.65rem">速度 (Δ/2s)</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
+            <div style="background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.2);border-radius:8px;padding:.5rem;text-align:center">
+              <div style="font-size:.9rem;font-weight:800;color:var(--accent-blue)" id="net-up-spd">-- KB/s</div>
+              <div style="font-size:.65rem;color:var(--text-muted)">上傳</div>
+            </div>
+            <div style="background:rgba(6,182,212,.08);border:1px solid rgba(6,182,212,.2);border-radius:8px;padding:.5rem;text-align:center">
+              <div style="font-size:.9rem;font-weight:800;color:var(--accent-cyan)" id="net-dn-spd">-- KB/s</div>
+              <div style="font-size:.65rem;color:var(--text-muted)">下載</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <footer>
+    NPUView System Monitor &nbsp;|&nbsp; Powered by Python Flask + Socket.IO &nbsp;|&nbsp;
+    資料每 2 秒自動更新
+  </footer>
+</div>
+
+<script>
+// ── Particles ──
+(function() {
+  const canvas = document.getElementById('particles-canvas');
+  const ctx = canvas.getContext('2d');
+  let particles = [];
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+  for (let i = 0; i < 60; i++) {
+    particles.push({
+      x: Math.random() * window.innerWidth,
+      y: Math.random() * window.innerHeight,
+      r: Math.random() * 2 + 0.5,
+      dx: (Math.random() - 0.5) * 0.3,
+      dy: (Math.random() - 0.5) * 0.3,
+      o: Math.random() * 0.5 + 0.1,
+    });
+  }
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    particles.forEach(p => {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(59,130,246,${p.o})`;
+      ctx.fill();
+      p.x += p.dx; p.y += p.dy;
+      if (p.x < 0) p.x = canvas.width;
+      if (p.x > canvas.width) p.x = 0;
+      if (p.y < 0) p.y = canvas.height;
+      if (p.y > canvas.height) p.y = 0;
+    });
+    requestAnimationFrame(draw);
+  }
+  draw();
+})();
+
+// ── Clock ──
+function updateClock() {
+  document.getElementById('clock').textContent = new Date().toLocaleTimeString('zh-TW', {hour12: false});
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ── Uptime counter ──
+let uptimeSeconds = 0;
+{% set h, m, s = (system_info.uptime.split(':') | list) if ':' in system_info.uptime else [0,0,0] %}
+try {
+  const parts = '{{ system_info.uptime }}'.split(':');
+  uptimeSeconds = parseInt(parts[0])*3600 + parseInt(parts[1])*60 + parseInt(parts[2]);
+} catch(e){}
+function updateUptime() {
+  uptimeSeconds++;
+  const h = String(Math.floor(uptimeSeconds/3600)).padStart(2,'0');
+  const m = String(Math.floor((uptimeSeconds%3600)/60)).padStart(2,'0');
+  const s = String(uptimeSeconds%60).padStart(2,'0');
+  const el = document.getElementById('uptime-val');
+  if (el) el.textContent = `${h}:${m}:${s}`;
+}
+setInterval(updateUptime, 1000);
+
+// ── Charts ──
+const chartOptions = (label, color) => ({
+  type: 'line',
+  data: {
+    labels: Array(30).fill(''),
+    datasets: [{
+      label,
+      data: Array(30).fill(0),
+      borderColor: color,
+      backgroundColor: color.replace('rgb','rgba').replace(')',',0.1)'),
+      borderWidth: 2,
+      pointRadius: 0,
+      tension: 0.4,
+      fill: true,
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    animation: { duration: 400 },
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { display: false },
+      y: {
+        min: 0, max: 100,
+        grid: { color: 'rgba(255,255,255,0.04)' },
+        ticks: { color: '#475569', font: { size: 10 }, callback: v => v + '%' },
+        border: { display: false },
+      }
+    }
+  }
+});
+
+const cpuChart = new Chart(document.getElementById('cpuChart'), chartOptions('CPU %', 'rgb(59,130,246)'));
+const gpuChart = new Chart(document.getElementById('gpuChart'), chartOptions('GPU %', 'rgb(139,92,246)'));
+
+function pushData(chart, value) {
+  chart.data.datasets[0].data.shift();
+  chart.data.datasets[0].data.push(value);
+  chart.update('none');
+}
+
+// ── Core cell color ──
+function coreColor(pct) {
+  if (pct < 40) return { bg: 'rgba(59,130,246,0.15)', color: '#93c5fd' };
+  if (pct < 70) return { bg: 'rgba(16,185,129,0.2)',  color: '#34d399' };
+  if (pct < 90) return { bg: 'rgba(245,158,11,0.2)',  color: '#fbbf24' };
+  return              { bg: 'rgba(239,68,68,0.25)',   color: '#f87171' };
+}
+
+// ── Temp badge ──
+function tempClass(t) {
+  if (t < 60) return 'temp-cool';
+  if (t < 80) return 'temp-warm';
+  return 'temp-hot';
+}
+
+// ── Format bytes ──
+function fmt(bytes, decimals = 1) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 ** 2) return (bytes/1024).toFixed(decimals) + ' KB';
+  if (bytes < 1024 ** 3) return (bytes/1024**2).toFixed(decimals) + ' MB';
+  return (bytes/1024**3).toFixed(decimals) + ' GB';
+}
+
+let prevNet = null;
+
+// ── Socket.IO ──
+const socket = io();
+socket.on('connect', () => { socket.emit('request_stats'); });
+
+socket.on('stats_update', data => {
+  // CPU
+  const cpu = data.cpu;
+  document.getElementById('cpu-pct').innerHTML = `${cpu.percent}<span class="stat-unit">%</span>`;
+  document.getElementById('cpu-bar').style.width = cpu.percent + '%';
+  document.getElementById('cpu-freq').textContent = `頻率: ${cpu.freq_current} MHz  |  核心: ${cpu.core_count_physical}P / ${cpu.core_count_logical}L`;
+  pushData(cpuChart, cpu.percent);
+
+  // CPU Cores
+  const grid = document.getElementById('cores-grid');
+  if (grid.children.length !== cpu.per_core.length) {
+    grid.innerHTML = '';
+    cpu.per_core.forEach((_, i) => {
+      const cell = document.createElement('div');
+      cell.className = 'core-cell';
+      cell.id = `core-${i}`;
+      cell.innerHTML = `<div style="font-size:.58rem;color:var(--text-muted)">C${i}</div><div class="core-pct">--%</div>`;
+      grid.appendChild(cell);
+    });
+  }
+  cpu.per_core.forEach((pct, i) => {
+    const cell = document.getElementById(`core-${i}`);
+    if (!cell) return;
+    const c = coreColor(pct);
+    cell.style.background = c.bg;
+    cell.querySelector('.core-pct').style.color = c.color;
+    cell.querySelector('.core-pct').textContent = `${Math.round(pct)}%`;
+  });
+
+  // Memory
+  const mem = data.memory;
+  document.getElementById('mem-pct').innerHTML = `${mem.percent}<span class="stat-unit">%</span>`;
+  document.getElementById('mem-bar').style.width = mem.percent + '%';
+  document.getElementById('mem-detail').textContent = `${mem.used} / ${mem.total} GB`;
+  document.getElementById('ram-pct-label').textContent = `${mem.percent}%`;
+  document.getElementById('ram-bar2').style.width = mem.percent + '%';
+  document.getElementById('ram-used').textContent = `${mem.used} GB`;
+  document.getElementById('ram-total').textContent = `${mem.total} GB`;
+  document.getElementById('swap-pct-label').textContent = `${mem.swap_percent}%`;
+  document.getElementById('swap-bar').style.width = mem.swap_percent + '%';
+  document.getElementById('swap-used').textContent = `${mem.swap_used} GB`;
+  document.getElementById('swap-total').textContent = `${mem.swap_total} GB`;
+  document.getElementById('ram-avail').textContent = mem.available;
+  document.getElementById('ram-total-b').textContent = mem.total;
+
+  // GPU
+  const gpus = data.gpu;
+  if (gpus && gpus.length > 0) {
+    const g = gpus[0];
+    document.getElementById('gpu-pct').innerHTML = `${g.load}<span class="stat-unit">%</span>`;
+    document.getElementById('gpu-bar').style.width = g.load + '%';
+    document.getElementById('gpu-mem-sub').textContent = `VRAM: ${g.mem_used} / ${g.mem_total} MB`;
+    pushData(gpuChart, g.load);
+
+    // GPU detail
+    const setEl = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = val; };
+    setEl('gpu-name', g.name);
+    setEl('gd-load', g.load + '%');
+    const gdTemp = document.getElementById('gd-temp');
+    if (gdTemp) {
+      gdTemp.textContent = g.temperature + '°C';
+      gdTemp.className = 'gpu-stat-val temp-badge ' + tempClass(g.temperature);
+    }
+    setEl('gd-mem-used', g.mem_used + ' MB');
+    setEl('gd-mem-total', g.mem_total + ' MB');
+    setEl('gd-fan', g.fan_speed >= 0 ? g.fan_speed + '%' : 'N/A');
+    setEl('gd-power', g.power_usage >= 0 ? g.power_usage + ' W' : 'N/A');
+    setEl('gd-core-clk', g.core_clock ? g.core_clock + ' MHz' : 'N/A');
+    setEl('gd-mem-clk', g.mem_clock ? g.mem_clock + ' MHz' : 'N/A');
+    const vramBar = document.getElementById('vram-bar');
+    if (vramBar) vramBar.style.width = g.mem_percent + '%';
+    setEl('vram-used-text', g.mem_used + ' MB');
+    setEl('vram-total-text', g.mem_total + ' MB');
+    setEl('gpu-driver', 'Driver: ' + g.driver);
+    // API / Vendor badges
+    const apiBadge = document.getElementById('gpu-api-badge');
+    if (apiBadge) apiBadge.textContent = g.api || '--';
+    const vendorBadge = document.getElementById('gpu-vendor-badge');
+    if (vendorBadge) vendorBadge.textContent = g.vendor || '--';
+  } else {
+    pushData(gpuChart, 0);
+  }
+
+  // Disk
+  const diskList = document.getElementById('disk-list');
+  diskList.innerHTML = '';
+  data.disk.slice(0, 5).forEach(d => {
+    const colors = d.percent > 90 ? ['#ef4444','rgba(239,68,68,.5)'] :
+                   d.percent > 70 ? ['#f59e0b','rgba(245,158,11,.5)'] :
+                                    ['#f97316','rgba(249,115,22,.5)'];
+    diskList.innerHTML += `
+      <div class="disk-row">
+        <div class="disk-header">
+          <span class="disk-path">${d.device} <span style="color:var(--text-muted);font-weight:400">${d.mountpoint}</span></span>
+          <span class="disk-usage">${d.used}/${d.total} GB</span>
+        </div>
+        <div class="gauge-bar-bg">
+          <div class="gauge-bar" style="width:${d.percent}%;--bar-from:${colors[0]};--bar-to:${colors[0]};--bar-glow:${colors[1]}"></div>
+        </div>
+        <div style="text-align:right;font-size:.68rem;color:${colors[0]};font-weight:700">${d.percent}%</div>
+      </div>`;
+  });
+
+  // Network
+  const net = data.network;
+  document.getElementById('net-sent').textContent = fmt(net.bytes_sent);
+  document.getElementById('net-recv').textContent = fmt(net.bytes_recv);
+  document.getElementById('net-pkt-s').textContent = net.packets_sent.toLocaleString();
+  document.getElementById('net-pkt-r').textContent = net.packets_recv.toLocaleString();
+  if (prevNet) {
+    const upKB = ((net.bytes_sent - prevNet.bytes_sent) / 2 / 1024).toFixed(1);
+    const dnKB = ((net.bytes_recv - prevNet.bytes_recv) / 2 / 1024).toFixed(1);
+    document.getElementById('net-up-spd').textContent = upKB + ' KB/s';
+    document.getElementById('net-dn-spd').textContent = dnKB + ' KB/s';
+  }
+  prevNet = net;
+});
+</script>
+</body>
+</html>

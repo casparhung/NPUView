@@ -1,0 +1,8 @@
+flask==3.0.3
+flask-socketio==5.3.6
+psutil==5.9.8
+GPUtil==1.4.0
+eventlet==0.36.1
+pynvml==11.5.3
+pywin32==311
+wmi==1.5.1
