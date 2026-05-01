@@ -73,7 +73,7 @@ http://localhost:2700
 ```
 
 ---
-
+![alt text](image.png)
 ## CPU 溫度
 
 Windows 限制一般程式無法直接讀取 CPU 溫度感測器。若要顯示 CPU 溫度，請先啟動以下任一工具（無需保持前景視窗開啟）：
