@@ -76,14 +76,23 @@ class _NvidiaProvider:
             if isinstance(name, bytes):
                 name = name.decode()
 
-            # 使用率
-            util = nv.nvmlDeviceGetUtilizationRates(h)
+            # 使用率（部分裝置/驅動可能回傳 Not Supported）
+            util_gpu = 0.0
+            try:
+                util = nv.nvmlDeviceGetUtilizationRates(h)
+                util_gpu = float(getattr(util, "gpu", 0.0))
+            except Exception as e:
+                logger.debug(f"[NVIDIA/pynvml] 讀取 GPU 使用率失敗 (index={i}): {e}")
 
             # 記憶體
-            mem = nv.nvmlDeviceGetMemoryInfo(h)
-            mem_total = mem.total / 1024 ** 2
-            mem_used  = mem.used  / 1024 ** 2
-            mem_free  = mem.free  / 1024 ** 2
+            mem_total = mem_used = mem_free = 0.0
+            try:
+                mem = nv.nvmlDeviceGetMemoryInfo(h)
+                mem_total = mem.total / 1024 ** 2
+                mem_used  = mem.used  / 1024 ** 2
+                mem_free  = mem.free  / 1024 ** 2
+            except Exception as e:
+                logger.debug(f"[NVIDIA/pynvml] 讀取顯存資訊失敗 (index={i}): {e}")
 
             # 溫度
             try:
@@ -128,7 +137,7 @@ class _NvidiaProvider:
 
             result.append(GPUInfo(
                 id=i, name=name, vendor="NVIDIA", api="pynvml",
-                load=util.gpu,
+                load=util_gpu,
                 mem_total=round(mem_total, 1),
                 mem_used=round(mem_used, 1),
                 mem_free=round(mem_free, 1),
@@ -916,8 +925,11 @@ class HardwareManager:
         # 3. WMI fallback — 補上尚未偵測到的 Intel / 其他
         detected_names = set()
         for p in self._gpu_providers:
-            for g in p.get_gpu_list():
-                detected_names.add(g.name.lower())
+            try:
+                for g in p.get_gpu_list():
+                    detected_names.add(g.name.lower())
+            except Exception as e:
+                logger.debug(f"[HW] 建立 GPU 名稱索引時略過提供者: {e}")
 
         try:
             wmi_p = _WMIGPUProvider()

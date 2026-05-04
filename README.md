@@ -1,117 +1,131 @@
-# NPUView — System Monitor
+# NPUView - System Monitor
 
-以 Python Flask + Socket.IO 建立的本機硬體監控儀表板，透過瀏覽器即時查看 CPU、GPU、記憶體、磁碟、網路等系統資訊，每 2 秒自動更新。
+NPUView 是一個在 Windows 上執行的本機硬體監控儀表板。
+使用 Flask + Socket.IO 提供網頁介面，預設每 2 秒更新一次 CPU、GPU、記憶體、磁碟與網路資訊。
 
----
+![NPUView 系統監控儀表板截圖](image.png)
 
-## 功能
+## 功能總覽
 
-| 類別 | 資訊 |
+| 類別 | 內容 |
 |------|------|
-| CPU  | 使用率、每核心使用率、時脈頻率 |
-| GPU  | 使用率、VRAM、溫度、功耗、核心/記憶體時脈（支援 NVIDIA / AMD / Intel） |
-| 記憶體 | 實體記憶體、虛擬記憶體 (Swap) 使用量 |
-| 磁碟 | 各磁碟分割使用率與容量 |
-| 網路 | 即時上傳/下載速率、封包統計 |
-| 系統 | OS 版本、主機名稱、CPU 型號、開機時間、執行時間 |
+| CPU | 使用率、每核心使用率、時脈、CPU 溫度來源 |
+| GPU | 使用率、顯存、溫度、風扇、功耗、核心/記憶體時脈 |
+| 記憶體 | 實體記憶體與 Swap 使用量 |
+| 磁碟 | 各分割區容量與使用率 |
+| 網路 | 傳輸量、封包統計 |
+| 系統 | OS、主機名稱、CPU 型號、開機時間、運行時間 |
 
----
+## 支援硬體與資料來源
 
-## 支援硬體
+| 裝置 | 優先來源 | 備援來源 | 說明 |
+|------|----------|----------|------|
+| NVIDIA GPU | pynvml | GPUtil / WMI | 部分指標可能因驅動限制不支援 |
+| AMD GPU | ADL (atiadlxx.dll) | WMI | 支援 RX 系列常見監控資訊 |
+| Intel GPU | WMI | - | 以基本資訊為主 |
+| CPU 溫度 | LibreHardwareMonitor / HWiNFO / OpenHardwareMonitor | psutil fallback | 若無可用來源會顯示 N/A |
 
-| 廠牌 | API | 備註 |
-|------|-----|------|
-| NVIDIA | pynvml | GeForce / RTX / Quadro |
-| AMD | ADL (atiadlxx.dll) + PMLog | RX 5000 / 6000 / 7000 系列 |
-| Intel | WMI | 整合顯示卡 |
+## 系統需求
 
----
-
-## 快速開始
-
-### 需求
-
-- Windows 10 / 11（64-bit）
+- Windows 10/11 (64-bit)
 - Python 3.9+
-- （選用）[HWiNFO64](https://www.hwinfo.com/) 或 [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) — 用於 CPU 溫度讀取
+- 可選工具 (用於 CPU 溫度):
+    - LibreHardwareMonitor
+    - OpenHardwareMonitor
+    - HWiNFO64 (需開啟 Shared Memory Support)
 
-### 安裝與啟動
+## 快速啟動
 
-**方式一：批次檔（雙擊啟動）**
+### 方式 1: 批次檔
 
 ```bat
 start_npuview.bat
 ```
 
-**方式二：PowerShell**
+### 方式 2: PowerShell
 
 ```powershell
 .\start_npuview.ps1
 ```
 
-> 兩個腳本皆會：
-> 1. 自動切換到專案目錄
-> 2. 優先使用 `.venv` 虛擬環境
-> 3. 若缺少套件，自動從 `requirements.txt` 安裝
-
-**方式三：手動**
+### 方式 3: 手動
 
 ```powershell
-# 建立虛擬環境（第一次）
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-
-# 啟動
 python app.py
 ```
 
-啟動後開啟瀏覽器前往：
+啟動後開啟:
 
-```
+```text
 http://localhost:2700
 ```
 
----
-![NPUView系統監控儀表板截圖](image.png)
-## CPU 溫度
+## 啟動腳本會做什麼
 
-Windows 限制一般程式無法直接讀取 CPU 溫度感測器。若要顯示 CPU 溫度，請先啟動以下任一工具（無需保持前景視窗開啟）：
+兩個啟動腳本都會自動執行以下步驟:
+
+1. 切換到專案目錄。
+2. 若存在 `.venv\Scripts\python.exe`，優先使用該 Python。
+3. 檢查套件是否可匯入，若缺少則執行 `pip install -r requirements.txt`。
+4. 啟動 `app.py`。
+
+## CPU 溫度說明
+
+Windows 一般程式無法直接讀取 CPU 溫度感測器，NPUView 會嘗試以下來源:
 
 | 工具 | 偵測方式 | 備註 |
 |------|----------|------|
-| **LibreHardwareMonitor** | WMI `root\LibreHardwareMonitor` | 建議以系統管理員執行 |
-| **OpenHardwareMonitor** | WMI `root\OpenHardwareMonitor` | 較舊但輕量 |
-| **HWiNFO64** | Shared Memory `HWiNFO_SENS_SM2` | 需在設定中啟用 Shared Memory Support |
+| LibreHardwareMonitor | WMI `root\LibreHardwareMonitor` | 建議系統管理員執行 |
+| OpenHardwareMonitor | WMI `root\OpenHardwareMonitor` | 較舊但可用 |
+| HWiNFO64 | Shared Memory `HWiNFO_SENS_SM2` | 需先開啟 Shared Memory |
 
-NPUView 啟動後會每 30 秒自動重新偵測，無需重啟即可自動切換至可用來源。
+若啟動時尚未偵測到來源，NPUView 會每 30 秒自動重試，不需要重啟程式。
 
----
+## 疑難排解
+
+### 1) 顯示 NVML Not Supported
+
+訊息範例:
+
+```text
+pynvml.nvml.NVMLError_NotSupported: Not Supported
+```
+
+這代表某個 NVIDIA 指標在目前驅動或裝置上不支援，不是整張卡失效。
+目前版本已改為自動略過不支援欄位，會繼續啟動並提供其他可用指標。
+
+### 2) AMD/ADL 顯示 0 個活躍顯示卡
+
+若同時可看到 NVIDIA 或 WMI 資料，通常屬正常情況，代表 ADL 沒有偵測到可用 AMD 裝置。
+
+### 3) CPU 溫度一直是 N/A
+
+請先啟動 LibreHardwareMonitor/OpenHardwareMonitor/HWiNFO64，並確認權限與設定正確。
 
 ## 專案結構
 
-```
+```text
 NPUView/
-├── app.py                  # Flask 主程式、Socket.IO 路由、背景收集執行緒
-├── hardware_provider.py    # 硬體抽象層：自動偵測並呼叫對應 GPU/CPU API
-├── requirements.txt        # Python 套件清單
-├── start_npuview.bat       # 一鍵啟動（批次檔）
-├── start_npuview.ps1       # 一鍵啟動（PowerShell）
-└── templates/
-    └── index.html          # 前端介面（Chart.js + Socket.IO）
+|- app.py
+|- hardware_provider.py
+|- requirements.txt
+|- start_npuview.bat
+|- start_npuview.ps1
+|- templates/
+|  |- index.html
+|- image.png
 ```
 
----
+## 套件清單
 
-## 套件說明
-
-| 套件 | 用途 |
-|------|------|
-| `flask` | Web 框架 |
-| `flask-socketio` | WebSocket 即時推送 |
-| `psutil` | CPU / 記憶體 / 磁碟 / 網路資訊 |
-| `pynvml` | NVIDIA GPU 資訊 |
-| `GPUtil` | NVIDIA GPU 輔助 |
-| `pywin32` | Windows API / WMI 存取 |
-| `wmi` | WMI 查詢（GPU、CPU 溫度來源偵測） |
-| `eventlet` | 非同步支援（保留相容性） |
+- flask
+- flask-socketio
+- psutil
+- GPUtil
+- eventlet
+- pynvml
+- pywin32
+- wmi
