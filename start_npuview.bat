@@ -12,7 +12,7 @@ if exist ".venv\Scripts\python.exe" (
 "%PYTHON%" -c "import psutil" >nul 2>&1
 if errorlevel 1 (
     echo [NPUView] Missing Python packages. Installing from requirements.txt ...
-    "%PYTHON%" -m pip install -r requirements.txt
+    "%PYTHON%" -m pip install --no-cache-dir -r requirements.txt
     if errorlevel 1 (
         echo [NPUView] Failed to install requirements.
         pause

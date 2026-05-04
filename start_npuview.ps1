@@ -11,7 +11,7 @@ if (Test-Path '.venv\Scripts\python.exe') {
 & $python '-c' 'import psutil' 2>$null
 if ($LASTEXITCODE -ne 0) {
     Write-Host '[NPUView] Missing Python packages. Installing from requirements.txt ...'
-    & $python '-m' 'pip' 'install' '-r' 'requirements.txt'
+    & $python '-m' 'pip' 'install' '--no-cache-dir' '-r' 'requirements.txt'
     if ($LASTEXITCODE -ne 0) {
         Write-Host '[NPUView] Failed to install requirements.' -ForegroundColor Red
         Read-Host 'Press Enter to close'
